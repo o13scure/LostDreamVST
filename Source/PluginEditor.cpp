@@ -21,17 +21,19 @@ namespace
     const auto kText         = juce::Colour(0xfff0f0f0);
     const auto kTextDim      = juce::Colour(0xffa9b0b4);
 
-    constexpr int editorWidth  = 980;
-    constexpr int editorHeight = 320;
+    constexpr int editorWidth  = 1200;
+    constexpr int editorHeight = 400;
+    constexpr int numSections  = 5;
     constexpr int topBarHeight = 32;
     constexpr int powerButtonW = 72;
     constexpr int powerButtonH = 28;
-    constexpr int smallKnobSize = 52;
-    constexpr int largeKnobSize = 108;
+    constexpr int labelHeight = 14;
+    constexpr int knobGap = 4;
+    constexpr int sectionPad = 8;
 }
 
 //==============================================================================
-SaturatorLookAndFeel::SaturatorLookAndFeel()
+LostDreamLookAndFeel::LostDreamLookAndFeel()
 {
     setColour(juce::Slider::thumbColourId, kKnobMid);
     setColour(juce::Slider::rotarySliderFillColourId, kAccent);
@@ -47,7 +49,7 @@ SaturatorLookAndFeel::SaturatorLookAndFeel()
     setColour(juce::Label::textColourId, kTextDim);
 }
 
-void SaturatorLookAndFeel::drawRotarySlider(juce::Graphics& g, int x, int y, int width, int height,
+void LostDreamLookAndFeel::drawRotarySlider(juce::Graphics& g, int x, int y, int width, int height,
                                             float sliderPosProportional, float rotaryStartAngle,
                                             float rotaryEndAngle, juce::Slider& slider)
 {
@@ -130,7 +132,7 @@ void SaturatorLookAndFeel::drawRotarySlider(juce::Graphics& g, int x, int y, int
                centre.x + dirX * lineOuter, centre.y + dirY * lineOuter, 0.6f);
 }
 
-void SaturatorLookAndFeel::drawLinearSlider(juce::Graphics& g, int x, int y, int width, int height,
+void LostDreamLookAndFeel::drawLinearSlider(juce::Graphics& g, int x, int y, int width, int height,
                                             float, float, float,
                                             juce::Slider::SliderStyle, juce::Slider& slider)
 {
@@ -163,7 +165,7 @@ void SaturatorLookAndFeel::drawLinearSlider(juce::Graphics& g, int x, int y, int
     g.drawEllipse(track.getCentreX() - 7.0f, thumbY - 7.0f, 14.0f, 14.0f, 1.2f);
 }
 
-void SaturatorLookAndFeel::drawToggleButton(juce::Graphics& g, juce::ToggleButton& button,
+void LostDreamLookAndFeel::drawToggleButton(juce::Graphics& g, juce::ToggleButton& button,
                                             bool shouldDrawButtonAsHighlighted,
                                             bool shouldDrawButtonAsDown)
 {
@@ -201,7 +203,7 @@ void SaturatorLookAndFeel::drawToggleButton(juce::Graphics& g, juce::ToggleButto
 }
 
 //==============================================================================
-SaturatorAudioProcessorEditor::SaturatorAudioProcessorEditor(SaturatorAudioProcessor& p)
+LostDreamAudioProcessorEditor::LostDreamAudioProcessorEditor(LostDreamAudioProcessor& p)
     : AudioProcessorEditor(&p),
       audioProcessor(p)
 {
@@ -228,18 +230,44 @@ SaturatorAudioProcessorEditor::SaturatorAudioProcessorEditor(SaturatorAudioProce
     gateThresholdValueLabel.setColour(juce::Label::textColourId, kText);
     gateThresholdValueLabel.setFont(juce::FontOptions(11.0f, juce::Font::bold));
 
+    configureRotaryKnob(gateAttackSlider, false);
+    configureRotaryKnob(gateReleaseSlider, false);
+    addAndMakeVisible(gateAttackSlider);
+    addAndMakeVisible(gateReleaseSlider);
+    setupLabel(gateAttackLabel, "ATK");
+    setupLabel(gateReleaseLabel, "REL");
+
     configureRotaryKnob(roomSizeSlider, true);
     configureRotaryKnob(dampingSlider, false);
     configureRotaryKnob(reverbMixSlider, false);
-    configureRotaryKnob(widthSlider, false);
+    configureRotaryKnob(reverbDecaySlider, false);
+    configureRotaryKnob(reverbDiffusionSlider, false);
+    configureRotaryKnob(reverbPreDelaySlider, false);
+    configureRotaryKnob(reverbLowCutSlider, false);
     addAndMakeVisible(roomSizeSlider);
     addAndMakeVisible(dampingSlider);
     addAndMakeVisible(reverbMixSlider);
-    addAndMakeVisible(widthSlider);
-    setupLabel(roomSizeLabel, "ROOM");
+    addAndMakeVisible(reverbDecaySlider);
+    addAndMakeVisible(reverbDiffusionSlider);
+    addAndMakeVisible(reverbPreDelaySlider);
+    addAndMakeVisible(reverbLowCutSlider);
+    
+    setupLabel(roomSizeLabel, "SIZE");
     setupLabel(dampingLabel, "DAMP");
     setupLabel(reverbMixLabel, "MIX");
-    setupLabel(widthLabel, "WIDTH");
+    setupLabel(reverbDecayLabel, "DEC");
+    setupLabel(reverbDiffusionLabel, "DIFF");
+    setupLabel(reverbPreDelayLabel, "PRE");
+    setupLabel(reverbLowCutLabel, "LOW");
+    
+
+    crushTypeCombo.addItemList({ "Full", "Quiet", "Loud" }, 1);
+    crushTypeCombo.setJustificationType(juce::Justification::centred);
+    addAndMakeVisible(crushTypeCombo);
+
+    configureRotaryKnob(crushMixSlider, false);
+    addAndMakeVisible(crushMixSlider);
+    setupLabel(crushMixLabel, "MIX");
 
     driveModeCombo.addItemList({ "Soft", "Hard", "Fold" }, 1);
     driveModeCombo.setJustificationType(juce::Justification::centred);
@@ -266,12 +294,20 @@ SaturatorAudioProcessorEditor::SaturatorAudioProcessorEditor(SaturatorAudioProce
 
     gateOnAttachment = std::make_unique<ButtonAttachment>(apvts, "GateOn", gateOnButton);
     gateThresholdAttachment = std::make_unique<SliderAttachment>(apvts, "GateThreshold", gateThresholdSlider);
+    gateAttackAttachment = std::make_unique<SliderAttachment>(apvts, "GateAttack", gateAttackSlider);
+    gateReleaseAttachment = std::make_unique<SliderAttachment>(apvts, "GateRelease", gateReleaseSlider);
 
     reverbOnAttachment = std::make_unique<ButtonAttachment>(apvts, "ReverbOn", reverbOnButton);
     roomSizeAttachment = std::make_unique<SliderAttachment>(apvts, "RoomSize", roomSizeSlider);
     dampingAttachment = std::make_unique<SliderAttachment>(apvts, "Damping", dampingSlider);
     reverbMixAttachment = std::make_unique<SliderAttachment>(apvts, "ReverbMix", reverbMixSlider);
-    widthAttachment = std::make_unique<SliderAttachment>(apvts, "Width", widthSlider);
+    reverbDecayAttachment = std::make_unique<SliderAttachment>(apvts, "ReverbDecay", reverbDecaySlider);
+    reverbDiffusionAttachment = std::make_unique<SliderAttachment>(apvts, "ReverbDiffusion", reverbDiffusionSlider);
+    reverbPreDelayAttachment = std::make_unique<SliderAttachment>(apvts, "ReverbPreDelay", reverbPreDelaySlider);
+    reverbLowCutAttachment = std::make_unique<SliderAttachment>(apvts, "ReverbLowCut", reverbLowCutSlider);
+
+    crushTypeAttachment = std::make_unique<ComboBoxAttachment>(apvts, "CrushType", crushTypeCombo);
+    crushMixAttachment = std::make_unique<SliderAttachment>(apvts, "CrushMix", crushMixSlider);
 
     driveAttachment = std::make_unique<SliderAttachment>(apvts, "Drive", driveSlider);
     driveModeAttachment = std::make_unique<ComboBoxAttachment>(apvts, "DriveMode", driveModeCombo);
@@ -288,12 +324,12 @@ SaturatorAudioProcessorEditor::SaturatorAudioProcessorEditor(SaturatorAudioProce
     setSize(editorWidth, editorHeight);
 }
 
-SaturatorAudioProcessorEditor::~SaturatorAudioProcessorEditor()
+LostDreamAudioProcessorEditor::~LostDreamAudioProcessorEditor()
 {
     setLookAndFeel(nullptr);
 }
 
-void SaturatorAudioProcessorEditor::configureRotaryKnob(juce::Slider& slider, bool largeKnob)
+void LostDreamAudioProcessorEditor::configureRotaryKnob(juce::Slider& slider, bool largeKnob)
 {
     slider.getProperties().set("knobSize", largeKnob ? "large" : "small");
     slider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
@@ -304,44 +340,119 @@ void SaturatorAudioProcessorEditor::configureRotaryKnob(juce::Slider& slider, bo
     slider.setMouseDragSensitivity(largeKnob ? 220 : 180);
 }
 
-void SaturatorAudioProcessorEditor::configureVerticalSlider(juce::Slider& slider)
+void LostDreamAudioProcessorEditor::configureVerticalSlider(juce::Slider& slider)
 {
     slider.setSliderStyle(juce::Slider::LinearVertical);
     slider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     slider.setPopupDisplayEnabled(true, true, this);
 }
 
-void SaturatorAudioProcessorEditor::layoutSquareRotary(juce::Rectangle<int> area, juce::Slider& slider)
+void LostDreamAudioProcessorEditor::layoutSquareRotary(juce::Rectangle<int> area, juce::Slider& slider)
 {
     const auto size = juce::jmin(area.getWidth(), area.getHeight());
     slider.setBounds(area.withSizeKeepingCentre(size, size));
 }
 
-void SaturatorAudioProcessorEditor::layoutTopPowerButton(juce::Rectangle<int> topRow, juce::ToggleButton& button)
+void LostDreamAudioProcessorEditor::layoutKnobInCell(juce::Rectangle<int> cell,
+                                                     juce::Label& label, juce::Slider& slider,
+                                                     int fixedKnobSize)
+{
+    label.setBounds(cell.removeFromTop(labelHeight));
+
+    if (fixedKnobSize > 0)
+        layoutSquareRotary(cell.withSizeKeepingCentre(fixedKnobSize, fixedKnobSize), slider);
+    else
+        layoutSquareRotary(cell, slider);
+}
+
+void LostDreamAudioProcessorEditor::layoutKnobColumnEven(
+    juce::Rectangle<int> column,
+    std::initializer_list<std::pair<juce::Label*, juce::Slider*>> knobs)
+{
+    const int count = static_cast<int>(knobs.size());
+    if (count == 0)
+        return;
+
+    const int totalGap = knobGap * (count - 1);
+    const int cellHeight = (column.getHeight() - totalGap) / count;
+
+    int index = 0;
+    for (const auto& knob : knobs)
+    {
+        auto cell = column.removeFromTop(cellHeight);
+        layoutKnobInCell(cell, *knob.first, *knob.second);
+
+        if (index < count - 1)
+            column.removeFromTop(knobGap);
+
+        ++index;
+    }
+}
+
+void LostDreamAudioProcessorEditor::layoutKnobGridEven(
+    juce::Rectangle<int> area, int cols, int rows,
+    std::initializer_list<std::pair<juce::Label*, juce::Slider*>> knobs,
+    bool fillColumnsFirst)
+{
+    const int count = static_cast<int>(knobs.size());
+    if (count == 0 || cols <= 0 || rows <= 0)
+        return;
+
+    const int colGap = knobGap;
+    const int rowGap = knobGap;
+    const int colWidth = (area.getWidth() - colGap * (cols - 1)) / cols;
+    const int rowHeight = (area.getHeight() - rowGap * (rows - 1)) / rows;
+
+    int index = 0;
+    for (const auto& knob : knobs)
+    {
+        int col, row;
+        if (fillColumnsFirst)
+        {
+            col = index / rows;
+            row = index % rows;
+        }
+        else
+        {
+            col = index % cols;
+            row = index / cols;
+        }
+
+        auto cell = juce::Rectangle<int>(
+            area.getX() + col * (colWidth + colGap),
+            area.getY() + row * (rowHeight + rowGap),
+            colWidth, rowHeight);
+
+        layoutKnobInCell(cell, *knob.first, *knob.second);
+        ++index;
+    }
+}
+
+void LostDreamAudioProcessorEditor::layoutTopPowerButton(juce::Rectangle<int> topRow, juce::ToggleButton& button)
 {
     button.setBounds(topRow.withSizeKeepingCentre(powerButtonW, powerButtonH));
 }
 
-void SaturatorAudioProcessorEditor::updatePowerButtonText(juce::ToggleButton& button)
+void LostDreamAudioProcessorEditor::updatePowerButtonText(juce::ToggleButton& button)
 {
     button.setButtonText(button.getToggleState() ? "ON" : "OFF");
 }
 
-void SaturatorAudioProcessorEditor::setupPowerButton(juce::ToggleButton& button)
+void LostDreamAudioProcessorEditor::setupPowerButton(juce::ToggleButton& button)
 {
     button.setClickingTogglesState(true);
     button.onClick = [this, &button] { updatePowerButtonText(button); };
     addAndMakeVisible(button);
 }
 
-void SaturatorAudioProcessorEditor::updateGateThresholdLabel()
+void LostDreamAudioProcessorEditor::updateGateThresholdLabel()
 {
     gateThresholdValueLabel.setText(
         juce::String(gateThresholdSlider.getValue(), 1) + " dB",
         juce::dontSendNotification);
 }
 
-void SaturatorAudioProcessorEditor::drawSection(juce::Graphics& g, juce::Rectangle<int> bounds,
+void LostDreamAudioProcessorEditor::drawSection(juce::Graphics& g, juce::Rectangle<int> bounds,
                                                 const juce::String& title) const
 {
     auto r = bounds.toFloat().reduced(1.0f);
@@ -369,7 +480,7 @@ void SaturatorAudioProcessorEditor::drawSection(juce::Graphics& g, juce::Rectang
     }
 }
 
-void SaturatorAudioProcessorEditor::paint(juce::Graphics& g)
+void LostDreamAudioProcessorEditor::paint(juce::Graphics& g)
 {
     auto r = getLocalBounds();
     juce::ColourGradient bgGrad(
@@ -381,7 +492,7 @@ void SaturatorAudioProcessorEditor::paint(juce::Graphics& g)
 
     auto bounds = getLocalBounds().reduced(10);
     const int gap = 8;
-    const int sectionWidth = (bounds.getWidth() - gap * 3) / 4;
+    const int sectionWidth = (bounds.getWidth() - gap * (numSections - 1)) / numSections;
 
     auto gateArea   = bounds.removeFromLeft(sectionWidth);
     bounds.removeFromLeft(gap);
@@ -389,24 +500,27 @@ void SaturatorAudioProcessorEditor::paint(juce::Graphics& g)
     bounds.removeFromLeft(gap);
     auto driveArea  = bounds.removeFromLeft(sectionWidth);
     bounds.removeFromLeft(gap);
+    auto crushArea  = bounds.removeFromLeft(sectionWidth);
+    bounds.removeFromLeft(gap);
     auto mixArea    = bounds;
 
     drawSection(g, gateArea, {});
     drawSection(g, reverbArea, {});
     drawSection(g, driveArea, {});
+    drawSection(g, crushArea, {});
     drawSection(g, mixArea, {});
 }
 
-void SaturatorAudioProcessorEditor::resized()
+void LostDreamAudioProcessorEditor::resized()
 {
     auto bounds = getLocalBounds().reduced(10);
     const int gap = 8;
-    const int sectionWidth = (bounds.getWidth() - gap * 3) / 4;
+    const int sectionWidth = (bounds.getWidth() - gap * (numSections - 1)) / numSections;
 
     auto placeSection = [&](juce::Rectangle<int> area)
     {
         area.removeFromTop(28);
-        return area.reduced(8, 4);
+        return area.reduced(sectionPad, 4);
     };
 
     auto gateArea = placeSection(bounds.removeFromLeft(sectionWidth));
@@ -415,60 +529,85 @@ void SaturatorAudioProcessorEditor::resized()
     bounds.removeFromLeft(gap);
     auto driveArea = placeSection(bounds.removeFromLeft(sectionWidth));
     bounds.removeFromLeft(gap);
+    auto crushArea = placeSection(bounds.removeFromLeft(sectionWidth));
+    bounds.removeFromLeft(gap);
     auto mixArea = placeSection(bounds);
 
-    auto layoutSmallKnob = [this](juce::Rectangle<int>& column, int knobSize,
-                                  juce::Label& label, juce::Slider& slider)
+    auto smallColumnWidth = [](juce::Rectangle<int> content, int knobCount)
     {
-        auto cell = column.removeFromTop(14 + knobSize + 6);
-        label.setBounds(cell.removeFromTop(14));
-        layoutSquareRotary(cell, slider);
+        const int cellHeight = (content.getHeight() - knobGap * (knobCount - 1)) / knobCount;
+        const int knobFromHeight = juce::jmax(0, cellHeight - labelHeight);
+        const int maxColShare = content.getWidth() * 42 / 100;
+        return juce::jmin(maxColShare, knobFromHeight + sectionPad);
     };
+
+    const int sharedSmallColW = smallColumnWidth(gateArea, 2);
+    const int sharedSmallCellH = (gateArea.getHeight() - knobGap) / 2;
+    const int sharedSmallKnobSize = juce::jmin(sharedSmallColW - sectionPad,
+                                               juce::jmax(0, sharedSmallCellH - labelHeight));
+
+    const int sharedLargeKnobSize = juce::jmin(gateArea.getWidth() - sharedSmallColW - sectionPad,
+                                                 juce::jmax(0, gateArea.getHeight() - labelHeight));
 
     // --- Gate ---
     auto gateTop = gateArea.removeFromTop(topBarHeight);
     layoutTopPowerButton(gateTop, gateOnButton);
 
-    auto threshColumn = gateArea.withSizeKeepingCentre(64, gateArea.getHeight());
-    gateThresholdLabel.setBounds(threshColumn.removeFromTop(16));
-    gateThresholdValueLabel.setBounds(threshColumn.removeFromBottom(18));
+    auto gateSmallCol = gateArea.removeFromRight(sharedSmallColW);
+    layoutKnobColumnEven(gateSmallCol,
+                         { { &gateAttackLabel,  &gateAttackSlider },
+                           { &gateReleaseLabel, &gateReleaseSlider } });
+
+    auto threshColumn = gateArea.reduced(juce::jmax(4, (gateArea.getWidth() - 56) / 2), 0);
+    gateThresholdLabel.setBounds(threshColumn.removeFromTop(labelHeight + 2));
+    gateThresholdValueLabel.setBounds(threshColumn.removeFromBottom(labelHeight + 4));
     gateThresholdSlider.setBounds(threshColumn.reduced(4, 2));
 
     // --- Reverb ---
     auto reverbTop = reverbArea.removeFromTop(topBarHeight);
     layoutTopPowerButton(reverbTop, reverbOnButton);
 
-    auto reverbKnobs = reverbArea;
-    auto reverbSmallCol = reverbKnobs.removeFromRight(smallKnobSize + 8);
-    layoutSmallKnob(reverbSmallCol, smallKnobSize, dampingLabel, dampingSlider);
-    layoutSmallKnob(reverbSmallCol, smallKnobSize, reverbMixLabel, reverbMixSlider);
-    layoutSmallKnob(reverbSmallCol, smallKnobSize, widthLabel, widthSlider);
+    constexpr int reverbSmallRows = 3;
+    constexpr int reverbSmallCols = 2;
+    const int reverbCellH = (reverbArea.getHeight() - knobGap * (reverbSmallRows - 1)) / reverbSmallRows;
+    const int reverbKnobFromHeight = juce::jmax(0, reverbCellH - labelHeight);
+    const int reverbGridW = reverbSmallCols * reverbKnobFromHeight + knobGap * (reverbSmallCols - 1) + sectionPad;
+    auto reverbSmallGrid = reverbArea.removeFromRight(juce::jmin(reverbGridW, reverbArea.getWidth() * 58 / 100));
 
-    auto roomCell = reverbKnobs;
-    roomSizeLabel.setBounds(roomCell.removeFromTop(14));
-    layoutSquareRotary(roomCell.withSizeKeepingCentre(largeKnobSize, largeKnobSize), roomSizeSlider);
+    layoutKnobGridEven(reverbSmallGrid, reverbSmallCols, reverbSmallRows,
+                       { { &dampingLabel,        &dampingSlider },
+                         { &reverbMixLabel,        &reverbMixSlider },
+                         { &reverbDecayLabel,      &reverbDecaySlider },
+                         { &reverbDiffusionLabel,  &reverbDiffusionSlider },
+                         { &reverbPreDelayLabel,   &reverbPreDelaySlider },
+                         { &reverbLowCutLabel,     &reverbLowCutSlider } },
+                       true);
+
+    layoutKnobInCell(reverbArea, roomSizeLabel, roomSizeSlider);
 
     // --- Drive ---
     auto driveTop = driveArea.removeFromTop(topBarHeight);
-    driveModeCombo.setBounds(driveTop.withSizeKeepingCentre(96, powerButtonH));
+    driveModeCombo.setBounds(driveTop.withSizeKeepingCentre(juce::jmin(96, driveTop.getWidth() - 8), powerButtonH));
 
-    auto driveKnobs = driveArea;
-    auto driveSmallCol = driveKnobs.removeFromRight(smallKnobSize + 8);
-    layoutSmallKnob(driveSmallCol, smallKnobSize, postGainLabel, postGainSlider);
-    layoutSmallKnob(driveSmallCol, smallKnobSize, preGainLabel, preGainSlider);
+    auto driveSmallCol = driveArea.removeFromRight(sharedSmallColW);
+    layoutKnobColumnEven(driveSmallCol,
+                         { { &preGainLabel,  &preGainSlider },
+                           { &postGainLabel, &postGainSlider } });
 
-    auto driveMain = driveKnobs;
-    driveLabel.setBounds(driveMain.removeFromTop(14));
-    layoutSquareRotary(driveMain.withSizeKeepingCentre(largeKnobSize + 8, largeKnobSize + 8), driveSlider);
+    layoutKnobInCell(driveArea, driveLabel, driveSlider);
+
+    // --- Bit crush ---
+    auto crushTop = crushArea.removeFromTop(topBarHeight);
+    crushTypeCombo.setBounds(crushTop.withSizeKeepingCentre(juce::jmin(100, crushTop.getWidth() - 8), powerButtonH));
+    layoutKnobInCell(crushArea, crushMixLabel, crushMixSlider, sharedLargeKnobSize);
 
     // --- Mix / Output ---
-    const int mixKnob = 72;
-    auto mixCell = mixArea.removeFromTop(mixArea.getHeight() / 2 - 2);
+    const int mixRowGap = knobGap;
+    const int mixRowH = (mixArea.getHeight() - mixRowGap) / 2;
+    auto mixCell = mixArea.removeFromTop(mixRowH);
+    mixArea.removeFromTop(mixRowGap);
     auto outCell = mixArea;
 
-    mixLabel.setBounds(mixCell.removeFromTop(14));
-    layoutSquareRotary(mixCell.withSizeKeepingCentre(mixKnob, mixKnob), mixSlider);
-
-    outputLabel.setBounds(outCell.removeFromTop(14));
-    layoutSquareRotary(outCell.withSizeKeepingCentre(mixKnob, mixKnob), outputSlider);
+    layoutKnobInCell(mixCell, mixLabel, mixSlider, sharedSmallKnobSize);
+    layoutKnobInCell(outCell, outputLabel, outputSlider, sharedSmallKnobSize);
 }

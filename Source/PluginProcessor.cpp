@@ -10,7 +10,7 @@
 #include "PluginEditor.h"
 
 //==============================================================================
-SaturatorAudioProcessor::SaturatorAudioProcessor()
+LostDreamAudioProcessor::LostDreamAudioProcessor()
 #ifndef JucePlugin_PreferredChannelConfigurations
      : AudioProcessor (BusesProperties()
                      #if ! JucePlugin_IsMidiEffect
@@ -24,17 +24,17 @@ SaturatorAudioProcessor::SaturatorAudioProcessor()
 {
 }
 
-SaturatorAudioProcessor::~SaturatorAudioProcessor()
+LostDreamAudioProcessor::~LostDreamAudioProcessor()
 {
 }
 
 //==============================================================================
-const juce::String SaturatorAudioProcessor::getName() const
+const juce::String LostDreamAudioProcessor::getName() const
 {
     return JucePlugin_Name;
 }
 
-bool SaturatorAudioProcessor::acceptsMidi() const
+bool LostDreamAudioProcessor::acceptsMidi() const
 {
    #if JucePlugin_WantsMidiInput
     return true;
@@ -43,7 +43,7 @@ bool SaturatorAudioProcessor::acceptsMidi() const
    #endif
 }
 
-bool SaturatorAudioProcessor::producesMidi() const
+bool LostDreamAudioProcessor::producesMidi() const
 {
    #if JucePlugin_ProducesMidiOutput
     return true;
@@ -52,7 +52,7 @@ bool SaturatorAudioProcessor::producesMidi() const
    #endif
 }
 
-bool SaturatorAudioProcessor::isMidiEffect() const
+bool LostDreamAudioProcessor::isMidiEffect() const
 {
    #if JucePlugin_IsMidiEffect
     return true;
@@ -61,57 +61,64 @@ bool SaturatorAudioProcessor::isMidiEffect() const
    #endif
 }
 
-double SaturatorAudioProcessor::getTailLengthSeconds() const
+double LostDreamAudioProcessor::getTailLengthSeconds() const
 {
     return 0.0;
 }
 
-int SaturatorAudioProcessor::getNumPrograms()
+int LostDreamAudioProcessor::getNumPrograms()
 {
     return 1;   // NB: some hosts don't cope very well if you tell them there are 0 programs,
                 // so this should be at least 1, even if you're not really implementing programs.
 }
 
-int SaturatorAudioProcessor::getCurrentProgram()
+int LostDreamAudioProcessor::getCurrentProgram()
 {
     return 0;
 }
 
-void SaturatorAudioProcessor::setCurrentProgram (int index)
+void LostDreamAudioProcessor::setCurrentProgram (int index)
 {
 }
 
-const juce::String SaturatorAudioProcessor::getProgramName (int index)
+const juce::String LostDreamAudioProcessor::getProgramName (int index)
 {
     return {};
 }
 
-void SaturatorAudioProcessor::changeProgramName (int index, const juce::String& newName)
+void LostDreamAudioProcessor::changeProgramName (int index, const juce::String& newName)
 {
 }
 
 //==============================================================================
-void SaturatorAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
+void LostDreamAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
-    const auto numChannels = (juce::uint32) juce::jmax(getTotalNumInputChannels(), getTotalNumOutputChannels());
-    juce::dsp::ProcessSpec spec { sampleRate, (juce::uint32) samplesPerBlock, numChannels };
+    const auto numChannels = juce::jmax(getTotalNumInputChannels(), getTotalNumOutputChannels());
+    juce::dsp::ProcessSpec monoSpec { sampleRate, (juce::uint32) samplesPerBlock, 1 };
 
-    gate.prepare(spec);
-    reverb.prepare(spec);
-    reverb.reset();
+    customGate.prepare(sampleRate, numChannels);
+    bitCrusher.prepare(sampleRate, numChannels);
 
-    dryBuffer.setSize((int) numChannels, samplesPerBlock);
+    for (auto& rev : schroederReverb)
+        rev.prepare(monoSpec);
+    for (auto& rev : fdnReverb)
+        rev.prepare(monoSpec);
+
+    schroederReverb[1].setStereoOffset(0.008f);
+    fdnReverb[1].setStereoOffset(0.01f);
+
+    dryBuffer.setSize(numChannels, samplesPerBlock);
 }
 
 
-void SaturatorAudioProcessor::releaseResources()
+void LostDreamAudioProcessor::releaseResources()
 {
     // When playback stops, you can use this as an opportunity to free up any
     // spare memory, etc.
 }
 
 #ifndef JucePlugin_PreferredChannelConfigurations
-bool SaturatorAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
+bool LostDreamAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 {
   #if JucePlugin_IsMidiEffect
     juce::ignoreUnused (layouts);
@@ -143,7 +150,7 @@ static float foldback(float x)
     return x;
 }
 
-void SaturatorAudioProcessor::processOverdriveBlock(const juce::dsp::ProcessContextReplacing<float>& ctx)
+void LostDreamAudioProcessor::processOverdriveBlock(const juce::dsp::ProcessContextReplacing<float>& ctx)
 {
     auto& block = ctx.getOutputBlock();
     auto settings = getSettings(apvts);
@@ -174,7 +181,7 @@ void SaturatorAudioProcessor::processOverdriveBlock(const juce::dsp::ProcessCont
 
 
 
-void SaturatorAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
+void LostDreamAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
 {
     juce::ScopedNoDenormals noDenormals;
 
@@ -204,28 +211,14 @@ void SaturatorAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juc
     
 
     if (settings.reverbOn)
-    {
-        juce::dsp::Reverb::Parameters reverbParams;
-        reverbParams.roomSize = settings.roomSize;
-        reverbParams.damping = settings.damping;
-        reverbParams.wetLevel = settings.reverbMix;
-        reverbParams.dryLevel = 1.0f - settings.reverbMix;
-        reverbParams.width = settings.width;
-        reverbParams.freezeMode = 0.0f;
-        reverb.setParameters(reverbParams);
-        reverb.process(ctx);
-    }
+        processReverbBlock(buffer, settings);
 
     processOverdriveBlock(ctx);
 
     if (settings.gateOn)
-    {
-        gate.setThreshold(settings.gateThreshold);
-        gate.setRatio(settings.gateRatio);
-        gate.setAttack(settings.gateAttack);
-        gate.setRelease(settings.gateRelease);
-        gate.process(ctx);
-    }
+        processGateBlock(buffer, settings);
+
+    processBitCrushBlock(buffer, settings);
 
     const float wetMix = settings.mix;
     const float dryMix = 1.0f - wetMix;
@@ -248,25 +241,25 @@ void SaturatorAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juc
 
 
 //==============================================================================
-bool SaturatorAudioProcessor::hasEditor() const
+bool LostDreamAudioProcessor::hasEditor() const
 {
     return true; // (change this to false if you choose to not supply an editor)
 }
 
-juce::AudioProcessorEditor* SaturatorAudioProcessor::createEditor()
+juce::AudioProcessorEditor* LostDreamAudioProcessor::createEditor()
 {
-    return new SaturatorAudioProcessorEditor(*this);
+    return new LostDreamAudioProcessorEditor(*this);
 }
 
 //==============================================================================
-void SaturatorAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
+void LostDreamAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
     // You should use this method to store your parameters in the memory block.
     // You could do that either as raw data, or use the XML or ValueTree classes
     // as intermediaries to make it easy to save and load complex data.
 }
 
-void SaturatorAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
+void LostDreamAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
     // You should use this method to restore your parameters from this memory block,
     // whose contents will have been created by the getStateInformation() call.
@@ -284,7 +277,6 @@ Settings getSettings(juce::AudioProcessorValueTreeState& apvts) {
     // Gate
     s.gateOn = apvts.getRawParameterValue("GateOn")->load() > 0.5f;
     s.gateThreshold = apvts.getRawParameterValue("GateThreshold")->load();
-    s.gateRatio = apvts.getRawParameterValue("GateRatio")->load();
     s.gateAttack = apvts.getRawParameterValue("GateAttack")->load();
     s.gateRelease = apvts.getRawParameterValue("GateRelease")->load();
 
@@ -293,7 +285,14 @@ Settings getSettings(juce::AudioProcessorValueTreeState& apvts) {
     s.roomSize = apvts.getRawParameterValue("RoomSize")->load();
     s.damping = apvts.getRawParameterValue("Damping")->load();
     s.reverbMix = apvts.getRawParameterValue("ReverbMix")->load();
-    s.width = apvts.getRawParameterValue("Width")->load();
+    s.reverbDecay = apvts.getRawParameterValue("ReverbDecay")->load();
+    s.reverbDiffusion = apvts.getRawParameterValue("ReverbDiffusion")->load();
+    s.reverbPreDelay = apvts.getRawParameterValue("ReverbPreDelay")->load();
+    s.reverbLowCut = apvts.getRawParameterValue("ReverbLowCut")->load();
+
+    s.crushType = (int) apvts.getRawParameterValue("CrushType")->load();
+    s.crushMix = apvts.getRawParameterValue("CrushMix")->load();
+    s.crushBits = apvts.getRawParameterValue("CrushBits")->load();
 
     // Output
     s.output = apvts.getRawParameterValue("Output")->load();
@@ -304,7 +303,7 @@ Settings getSettings(juce::AudioProcessorValueTreeState& apvts) {
 
 
 
-juce::AudioProcessorValueTreeState::ParameterLayout SaturatorAudioProcessor::createParameterLayout() 
+juce::AudioProcessorValueTreeState::ParameterLayout LostDreamAudioProcessor::createParameterLayout() 
 {
     juce::AudioProcessorValueTreeState::ParameterLayout layout;
     
@@ -319,18 +318,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout SaturatorAudioProcessor::cre
         -40.0f));
 
     layout.add(std::make_unique<juce::AudioParameterFloat>(
-        "GateRatio", "Gate Ratio",
-        juce::NormalisableRange<float>(1.0f, 20.0f, 0.1f),
-        10.0f));
-
-    layout.add(std::make_unique<juce::AudioParameterFloat>(
         "GateAttack", "Gate Attack",
-        juce::NormalisableRange<float>(0.1f, 100.0f, 0.1f),
+        juce::NormalisableRange<float>(0.01f, 50.0f, 0.01f, 0.45f),
         5.0f));
 
     layout.add(std::make_unique<juce::AudioParameterFloat>(
         "GateRelease", "Gate Release",
-        juce::NormalisableRange<float>(1.0f, 1000.0f, 1.0f),
+        juce::NormalisableRange<float>(1.0f, 1000.0f, 0.1f, 0.35f),
         100.0f));
 
     
@@ -355,10 +349,30 @@ juce::AudioProcessorValueTreeState::ParameterLayout SaturatorAudioProcessor::cre
         juce::NormalisableRange<float>(-24.0f, 12.0f, 0.01f),
         0.0f));
 
+    // BIT CRUSH
+
+    layout.add(std::make_unique<juce::AudioParameterChoice>(
+        "CrushType", "Crush Type",
+        juce::StringArray { "Full", "Quiet", "Loud" }, 0));
+
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        "CrushMix", "Crush Mix",
+        juce::NormalisableRange<float>(0.0f, 1.0f, 0.001f),
+        0.0f));
+
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        "CrushBits", "Crush Bits",
+        juce::NormalisableRange<float>(4.0f, 16.0f, 0.1f),
+        8.0f));
+
     // REVERB
     
     layout.add(std::make_unique<juce::AudioParameterBool>(
-    "ReverbOn", "Reverb On", true));
+        "ReverbOn", "Reverb On", true));
+
+    layout.add(std::make_unique<juce::AudioParameterChoice>(
+        "ReverbType", "Reverb Type",
+        juce::StringArray { "Schroeder", "FDN" }, 0));
 
     layout.add(std::make_unique<juce::AudioParameterFloat>(
         "RoomSize", "Room Size",
@@ -367,8 +381,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout SaturatorAudioProcessor::cre
 
     layout.add(std::make_unique<juce::AudioParameterFloat>(
         "Damping", "Damping",
-        juce::NormalisableRange<float>(0.0f, 1.0f, 0.001f),
-        0.5f));
+        juce::NormalisableRange<float>(0.05f, 0.95f, 0.001f),
+        0.2f));
 
     layout.add(std::make_unique<juce::AudioParameterFloat>(
         "ReverbMix", "Reverb Mix",
@@ -376,9 +390,29 @@ juce::AudioProcessorValueTreeState::ParameterLayout SaturatorAudioProcessor::cre
         0.3f));
 
     layout.add(std::make_unique<juce::AudioParameterFloat>(
-        "Width", "Width",
+        "ReverbDecay", "Reverb Decay",
+        juce::NormalisableRange<float>(0.0f, 0.999f, 0.001f),
+        0.85f));
+
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        "ReverbDiffusion", "Reverb Diffusion",
         juce::NormalisableRange<float>(0.0f, 1.0f, 0.001f),
-        1.0f));
+        0.5f));
+
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        "ReverbPreDelay", "Reverb Pre Delay",
+        juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f),
+        0.0f));
+
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        "ReverbLowCut", "Reverb Low Cut",
+        juce::NormalisableRange<float>(20.0f, 500.0f, 1.0f, 0.4f),
+        80.0f));
+
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        "ReverbAllpass", "Reverb Allpass",
+        juce::NormalisableRange<float>(0.1f, 0.9f, 0.001f),
+        0.7f));
 
     layout.add(std::make_unique<juce::AudioParameterFloat>(
         "Output", "Output",
@@ -394,8 +428,211 @@ juce::AudioProcessorValueTreeState::ParameterLayout SaturatorAudioProcessor::cre
 }
 
 //==============================================================================
+void CustomNoiseGate::prepare(double newSampleRate, int channels)
+{
+    sampleRate = newSampleRate;
+    numChannels = juce::jmax(1, channels);
+
+    constexpr double envelopeTimeSec = 0.005; // 5 ms RMS detector
+    rmsAlpha = (float) std::exp(-1.0 / (envelopeTimeSec * sampleRate));
+
+    updateCoefficients();
+    reset();
+}
+
+void CustomNoiseGate::reset()
+{
+    rmsEnvelope = 0.0f;
+    gain = 1.0f;
+}
+
+void CustomNoiseGate::setThresholdDb(float newThresholdDb)
+{
+    thresholdDb = newThresholdDb;
+}
+
+void CustomNoiseGate::setAttackMs(float newAttackMs)
+{
+    attackMs = juce::jmax(0.01f, newAttackMs);
+    updateCoefficients();
+}
+
+void CustomNoiseGate::setReleaseMs(float newReleaseMs)
+{
+    releaseMs = juce::jmax(1.0f, newReleaseMs);
+    updateCoefficients();
+}
+
+void CustomNoiseGate::updateCoefficients()
+{
+    const auto attackSec = attackMs * 0.001f;
+    attackStep = juce::jlimit(0.0f, 1.0f, 1.0f / (float) (attackSec * sampleRate));
+
+    const auto releaseSec = releaseMs * 0.001f;
+    releaseBeta = (float) std::exp(-1.0 / (releaseSec * sampleRate));
+}
+
+void CustomNoiseGate::process(juce::AudioBuffer<float>& buffer)
+{
+    const int numSamples = buffer.getNumSamples();
+    const int channelsToUse = juce::jmin(numChannels, buffer.getNumChannels());
+    const float thresholdLinear = juce::Decibels::decibelsToGain(thresholdDb);
+
+    for (int i = 0; i < numSamples; ++i)
+    {
+        float monoSquare = 0.0f;
+        for (int ch = 0; ch < channelsToUse; ++ch)
+        {
+            const float x = buffer.getSample(ch, i);
+            monoSquare += x * x;
+        }
+        monoSquare /= (float) channelsToUse;
+
+        // RMS envelope: e[n] = sqrt(alpha * e^2[n-1] + (1-alpha) * x^2[n])
+        rmsEnvelope = std::sqrt(rmsAlpha * rmsEnvelope * rmsEnvelope
+                                + (1.0f - rmsAlpha) * monoSquare);
+
+        const bool gateOpen = rmsEnvelope >= thresholdLinear;
+
+        if (gateOpen)
+        {
+            // Attack: g[n] = g[n-1] + (1 / (tau_a * fs)) * (1 - g[n-1])
+            gain += attackStep * (1.0f - gain);
+        }
+        else
+        {
+            // Release: g[n] = g[n-1] * beta_release
+            gain *= releaseBeta;
+        }
+
+        for (int ch = 0; ch < channelsToUse; ++ch)
+            buffer.setSample(ch, i, buffer.getSample(ch, i) * gain);
+    }
+}
+
+void LostDreamAudioProcessor::processGateBlock(juce::AudioBuffer<float>& buffer, const Settings& settings)
+{
+    customGate.setThresholdDb(settings.gateThreshold);
+    customGate.setAttackMs(settings.gateAttack);
+    customGate.setReleaseMs(settings.gateRelease);
+    customGate.process(buffer);
+}
+
+void LostDreamAudioProcessor::applyReverbParams(const Settings& settings)
+{
+
+    for (auto& rev : fdnReverb)
+    {
+        rev.setSize(settings.roomSize);
+        rev.setDecay(settings.reverbDecay);
+        rev.setDiffusion(settings.reverbDiffusion);
+        rev.setDamping(settings.damping);
+        rev.setPreDelayMs(settings.reverbPreDelay);
+        rev.setLowCutHz(settings.reverbLowCut);
+        rev.setMix(settings.reverbMix);
+    }
+}
+
+void BitCrusher::prepare(double newSampleRate, int channels)
+{
+    sampleRate = newSampleRate;
+    numChannels = juce::jmax(1, channels);
+
+    constexpr double envelopeTimeSec = 0.01;
+    rmsAlpha = (float) std::exp(-1.0 / (envelopeTimeSec * sampleRate));
+    reset();
+}
+
+void BitCrusher::reset()
+{
+    envelope = 0.0f;
+}
+
+void BitCrusher::setType(int type) { crushType = juce::jlimit(0, 2, type); }
+void BitCrusher::setMix(float wet) { mix = juce::jlimit(0.0f, 1.0f, wet); }
+void BitCrusher::setBits(float bits) { targetBits = juce::jlimit(minBits, maxBits, bits); }
+
+float BitCrusher::quantize(float sample, float bits)
+{
+    const float levels = std::exp2(bits) - 1.0f;
+    const float clamped = juce::jlimit(-1.0f, 1.0f, sample);
+    return std::round(clamped * levels) / levels;
+}
+
+float BitCrusher::effectiveBits(float env) const
+{
+    env = juce::jlimit(0.0f, 1.0f, env);
+
+    switch (crushType)
+    {
+    case 0: // Full — constant resolution
+        return targetBits;
+
+    case 1: // Quiet — more crush when envelope is low
+        return minBits + env * (targetBits - minBits);
+
+    case 2: // Loud — more crush when envelope is high
+        return targetBits - env * (targetBits - minBits);
+
+    default:
+        return targetBits;
+    }
+}
+
+void BitCrusher::process(juce::AudioBuffer<float>& buffer)
+{
+    if (mix <= 0.0001f)
+        return;
+
+    const int numSamples = buffer.getNumSamples();
+    const int channelsToUse = juce::jmin(numChannels, buffer.getNumChannels());
+
+    for (int i = 0; i < numSamples; ++i)
+    {
+        float monoSquare = 0.0f;
+        for (int ch = 0; ch < channelsToUse; ++ch)
+        {
+            const float x = buffer.getSample(ch, i);
+            monoSquare += x * x;
+        }
+        monoSquare /= (float) channelsToUse;
+
+        envelope = std::sqrt(rmsAlpha * envelope * envelope + (1.0f - rmsAlpha) * monoSquare);
+        const float bits = effectiveBits(envelope);
+
+        for (int ch = 0; ch < channelsToUse; ++ch)
+        {
+            const float dry = buffer.getSample(ch, i);
+            const float crushed = quantize(dry, bits);
+            buffer.setSample(ch, i, dry * (1.0f - mix) + crushed * mix);
+        }
+    }
+}
+
+void LostDreamAudioProcessor::processBitCrushBlock(juce::AudioBuffer<float>& buffer, const Settings& settings)
+{
+    bitCrusher.setType(settings.crushType);
+    bitCrusher.setMix(settings.crushMix);
+    bitCrusher.setBits(settings.crushBits);
+    bitCrusher.process(buffer);
+}
+
+void LostDreamAudioProcessor::processReverbBlock(juce::AudioBuffer<float>& buffer, const Settings& settings)
+{
+    applyReverbParams(settings);
+
+    const int numSamples = buffer.getNumSamples();
+    const int channelsToProcess = juce::jmin(buffer.getNumChannels(), 2);
+
+    
+    for (int ch = 0; ch < channelsToProcess; ++ch){
+        fdnReverb[(size_t) ch].processChannel(buffer.getWritePointer(ch), numSamples);
+    }
+}
+
+//==============================================================================
 // This creates new instances of the plugin..
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
-    return new SaturatorAudioProcessor();
+    return new LostDreamAudioProcessor();
 }

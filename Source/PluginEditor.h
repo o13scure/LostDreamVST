@@ -12,10 +12,10 @@
 #include "PluginProcessor.h"
 
 //==============================================================================
-class SaturatorLookAndFeel : public juce::LookAndFeel_V4
+class LostDreamLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
-    SaturatorLookAndFeel();
+    LostDreamLookAndFeel();
 
     void drawRotarySlider(juce::Graphics& g, int x, int y, int width, int height,
                           float sliderPosProportional, float rotaryStartAngle,
@@ -31,11 +31,11 @@ public:
 };
 
 //==============================================================================
-class SaturatorAudioProcessorEditor : public juce::AudioProcessorEditor
+class LostDreamAudioProcessorEditor : public juce::AudioProcessorEditor
 {
 public:
-    explicit SaturatorAudioProcessorEditor(SaturatorAudioProcessor&);
-    ~SaturatorAudioProcessorEditor() override;
+    explicit LostDreamAudioProcessorEditor(LostDreamAudioProcessor&);
+    ~LostDreamAudioProcessorEditor() override;
 
     void paint(juce::Graphics&) override;
     void resized() override;
@@ -45,18 +45,29 @@ private:
     void configureVerticalSlider(juce::Slider& slider);
     void drawSection(juce::Graphics& g, juce::Rectangle<int> bounds, const juce::String& title) const;
     void layoutSquareRotary(juce::Rectangle<int> area, juce::Slider& slider);
+    void layoutKnobInCell(juce::Rectangle<int> cell, juce::Label& label, juce::Slider& slider,
+                          int fixedKnobSize = 0);
+    void layoutKnobColumnEven(juce::Rectangle<int> column,
+                              std::initializer_list<std::pair<juce::Label*, juce::Slider*>> knobs);
+    void layoutKnobGridEven(juce::Rectangle<int> area, int cols, int rows,
+                            std::initializer_list<std::pair<juce::Label*, juce::Slider*>> knobs,
+                            bool fillColumnsFirst = false);
     void layoutTopPowerButton(juce::Rectangle<int> topRow, juce::ToggleButton& button);
     void updatePowerButtonText(juce::ToggleButton& button);
     void setupPowerButton(juce::ToggleButton& button);
     void updateGateThresholdLabel();
 
-    SaturatorLookAndFeel pluginLookAndFeel;
-    SaturatorAudioProcessor& audioProcessor;
+    LostDreamLookAndFeel pluginLookAndFeel;
+    LostDreamAudioProcessor& audioProcessor;
 
     // Gate
     juce::ToggleButton gateOnButton;
     juce::Slider gateThresholdSlider;
+    juce::Slider gateAttackSlider;
+    juce::Slider gateReleaseSlider;
     juce::Label gateThresholdLabel;
+    juce::Label gateAttackLabel;
+    juce::Label gateReleaseLabel;
     juce::Label gateThresholdValueLabel;
 
     // Reverb
@@ -64,11 +75,22 @@ private:
     juce::Slider roomSizeSlider;
     juce::Slider dampingSlider;
     juce::Slider reverbMixSlider;
-    juce::Slider widthSlider;
+    juce::Slider reverbDecaySlider;
+    juce::Slider reverbDiffusionSlider;
+    juce::Slider reverbPreDelaySlider;
+    juce::Slider reverbLowCutSlider;
     juce::Label roomSizeLabel;
     juce::Label dampingLabel;
     juce::Label reverbMixLabel;
-    juce::Label widthLabel;
+    juce::Label reverbDecayLabel;
+    juce::Label reverbDiffusionLabel;
+    juce::Label reverbPreDelayLabel;
+    juce::Label reverbLowCutLabel;
+
+    // Bit crush
+    juce::ComboBox crushTypeCombo;
+    juce::Slider crushMixSlider;
+    juce::Label crushMixLabel;
 
     // Drive
     juce::ComboBox driveModeCombo;
@@ -91,12 +113,20 @@ private:
 
     std::unique_ptr<ButtonAttachment> gateOnAttachment;
     std::unique_ptr<SliderAttachment> gateThresholdAttachment;
+    std::unique_ptr<SliderAttachment> gateAttackAttachment;
+    std::unique_ptr<SliderAttachment> gateReleaseAttachment;
 
     std::unique_ptr<ButtonAttachment> reverbOnAttachment;
     std::unique_ptr<SliderAttachment> roomSizeAttachment;
     std::unique_ptr<SliderAttachment> dampingAttachment;
     std::unique_ptr<SliderAttachment> reverbMixAttachment;
-    std::unique_ptr<SliderAttachment> widthAttachment;
+    std::unique_ptr<SliderAttachment> reverbDecayAttachment;
+    std::unique_ptr<SliderAttachment> reverbDiffusionAttachment;
+    std::unique_ptr<SliderAttachment> reverbPreDelayAttachment;
+    std::unique_ptr<SliderAttachment> reverbLowCutAttachment;
+    
+    std::unique_ptr<ComboBoxAttachment> crushTypeAttachment;
+    std::unique_ptr<SliderAttachment> crushMixAttachment;
 
     std::unique_ptr<SliderAttachment> driveAttachment;
     std::unique_ptr<ComboBoxAttachment> driveModeAttachment;
@@ -106,5 +136,5 @@ private:
     std::unique_ptr<SliderAttachment> mixAttachment;
     std::unique_ptr<SliderAttachment> outputAttachment;
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SaturatorAudioProcessorEditor)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(LostDreamAudioProcessorEditor)
 };
